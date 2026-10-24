@@ -1,0 +1,12 @@
+[
+  {
+    "title": "Helios Cloud Global Infrastructure",
+    "url": "https://status.helios-cloud.example/infrastructure",
+    "content": "Helios Cloud operates data centers in five regions: US East (Virginia), US West (Oregon), EU Central (Frankfurt), EU West (Dublin), and Asia Pacific (Singapore).\n\nCustomers choose a primary region when creating a project. Projects can be replicated to a second region on the Enterprise plan."
+  },
+  {
+    "title": "Helios Cloud Release Notes 4.2",
+    "url": "https://blog.helios-cloud.example/release-4-2",
+    "content": "Release 4.2 introduced a command line tool called helioctl for managing projects from a terminal. The release also added Terraform provider support and raised the maximum object size to 5 gigabytes."
+  }
+]
