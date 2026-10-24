@@ -64,3 +64,18 @@ def test_parse_answer_accepts_fenced_json_and_rejects_garbage():
     for bad in ["no json here", '{"claims": "nope"}', "{broken"]:
         with pytest.raises(MalformedOutput):
             parse_answer(bad)
+
+
+@pytest.mark.parametrize("text,quote", [
+    ("Audit logs are retained for 40 days on the Enterprise plan.", "40"),
+    ("Audit logs are retained for 40 days on the Enterprise plan.", "40 days on the Enterprise plan"),
+    ("Audit logs are retained for 3 days on the Team plan.", "for 9"),
+])
+def test_quote_must_match_whole_tokens(text, quote):
+    c = check(claim(text, quote))
+    assert not c.verified and "not in the source" in c.issues[0]
+
+
+def test_quote_without_content_terms_is_rejected():
+    c = check(claim("Audit logs are retained on the Enterprise plan.", "the"))
+    assert not c.verified and "not in the source" in c.issues[0]

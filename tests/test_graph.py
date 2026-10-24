@@ -2,7 +2,10 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphRecursionError
 
+from conftest import reply
 from rag_citation_agent import RAGAgent
+from rag_citation_agent.llm import ScriptedLLMClient
+from rag_citation_agent.models import Chunk, RetrievedChunk
 from rag_citation_agent.offline import ExtractiveLLMClient
 
 
@@ -45,3 +48,31 @@ def test_recursion_limit_is_enforced(kb, settings):
     agent = RAGAgent(kb, ExtractiveLLMClient(), None, settings.model_copy(update={"recursion_limit": 1}))
     with pytest.raises(GraphRecursionError):
         agent.ask("How long are audit logs retained on the Enterprise plan?")
+
+
+def test_reused_thread_answer_reflects_only_the_current_question(kb, search):
+    fresh = RAGAgent(kb, ExtractiveLLMClient(), search).ask("How long are audit logs retained on the Enterprise plan?")
+    agent = RAGAgent(kb, ExtractiveLLMClient(), search, checkpointer=MemorySaver())
+    agent.ask("Which regions does Helios Cloud operate data centers in?", thread_id="s")
+    again = agent.ask("How long are audit logs retained on the Enterprise plan?", thread_id="s")
+    assert again.trace == fresh.trace
+    assert again.used_fallback is fresh.used_fallback is False and again.flags == fresh.flags
+
+
+class _StubKB:
+    def __init__(self, hits):
+        self.hits = hits
+
+    def search(self, query, k=4):
+        return self.hits
+
+
+def test_retrieval_gate_uses_the_best_coverage_not_the_top_score():
+    text = "Audit logs are retained for 400 days on the Enterprise plan."
+    hits = [
+        RetrievedChunk(chunk=Chunk(id="x#0", doc_id="x", title="X", text="Enterprise."), score=0.9, coverage=0.1),
+        RetrievedChunk(chunk=Chunk(id="y#0", doc_id="y", title="Y", text=text), score=0.4, coverage=0.9),
+    ]
+    llm = ScriptedLLMClient([reply(("Enterprise audit logs are retained for 400 days.", "S2", "for 400 days on the Enterprise plan"))])
+    a = RAGAgent(_StubKB(hits), llm).ask("How long are audit logs retained on the Enterprise plan?")
+    assert len(llm.calls) == 1 and a.citations and a.citations[0].chunk_id == "y#0"

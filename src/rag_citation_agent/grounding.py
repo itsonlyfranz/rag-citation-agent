@@ -27,7 +27,7 @@ def verify_claim(raw: RawClaim, context: dict[str, RetrievedChunk], min_support:
         hit = context.get(cit.source)
         if hit is None:
             issues.append(f"unknown source {cit.source!r}")
-        elif not normalize(cit.quote) or normalize(cit.quote) not in normalize(hit.chunk.text):
+        elif not content_tokens(cit.quote) or f" {normalize(cit.quote)} " not in f" {normalize(hit.chunk.text)} ":
             issues.append(f"quote for {cit.source} is not in the source")
         else:
             verified.append((cit.source, hit, cit.quote.strip()))

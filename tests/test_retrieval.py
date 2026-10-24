@@ -66,3 +66,15 @@ def test_empty_index_and_stopword_only_query():
     kb = KnowledgeBase()
     kb.add([Document(id="a", title="A", text="alpha beta")])
     assert kb.search("the and of") == []
+
+
+def test_same_named_files_in_different_directories_get_distinct_ids(tmp_path):
+    for sub, body in (("a", "alpha beta gamma"), ("b", "delta epsilon zeta")):
+        (tmp_path / sub).mkdir()
+        (tmp_path / sub / "notes.md").write_text(body, encoding="utf-8")
+    docs = load_documents([tmp_path / "a", tmp_path / "b"])
+    assert [(d.id, d.uri) for d in docs] == [("a/notes", "a/notes.md"), ("b/notes", "b/notes.md")]
+    kb = KnowledgeBase()
+    kb.add(docs)
+    assert len({c.id for c in kb.chunks}) == len(kb.chunks) == 2
+    assert kb.search("alpha") and kb.search("delta")

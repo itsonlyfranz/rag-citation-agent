@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -115,13 +116,24 @@ class KnowledgeBase:
 
 
 def load_documents(paths: list[Path]) -> list[Document]:
-    """Read .md/.txt files (recursing into directories); the title is the first '# ' heading."""
+    """Read .md/.txt files (recursing into directories); the title is the first '# ' heading.
+
+    A document's id is its path relative to the files' common directory, so same-named files never collide.
+    """
     files: list[Path] = []
     for p in paths:
         files.extend(sorted(q for q in p.rglob("*") if q.suffix in {".md", ".txt"}) if p.is_dir() else [p])
+    files = [f.resolve() for f in files]
+    root = Path(os.path.commonpath([f.parent for f in files])) if files else Path()
     docs = []
     for f in files:
+        rel = f.relative_to(root)
         text = f.read_text(encoding="utf-8")
         heading = next((ln[2:].strip() for ln in text.splitlines() if ln.startswith("# ")), None)
-        docs.append(Document(id=f.stem, title=heading or f.stem.replace("-", " ").title(), text=text, uri=f.name))
+        docs.append(
+            Document(
+                id=rel.with_suffix("").as_posix(), title=heading or f.stem.replace("-", " ").title(),
+                text=text, uri=rel.as_posix(),
+            )
+        )
     return docs

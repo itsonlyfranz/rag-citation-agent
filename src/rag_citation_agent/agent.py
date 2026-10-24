@@ -15,9 +15,8 @@
 
 from __future__ import annotations
 
-import operator
 import uuid
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
@@ -50,14 +49,14 @@ class Attempt(BaseModel):
 
 
 class AgentState(BaseModel):
-    """Typed graph state. `trace` accumulates across nodes; every other field is last-write-wins."""
+    """Typed graph state. Every field is last-write-wins; `retrieve` resets the per-question fields."""
 
     question: str
     hits: list[RetrievedChunk] = Field(default_factory=list)
     attempt: Attempt = Field(default_factory=Attempt)
     found: list[RetrievedChunk] = Field(default_factory=list)
     used_fallback: bool = False
-    trace: Annotated[list[str], operator.add] = Field(default_factory=list)
+    trace: list[str] = Field(default_factory=list)
     answer: Answer | None = None
 
 
@@ -115,7 +114,7 @@ class RAGAgent:
     # --- routing --------------------------------------------------------------------------------
 
     def _route_retrieval(self, state: AgentState) -> Literal["answer_from_kb", "weak_retrieval"]:
-        best = state.hits[0].coverage if state.hits else 0.0
+        best = max((h.coverage for h in state.hits), default=0.0)
         return "answer_from_kb" if best >= self.settings.min_retrieval else "weak_retrieval"
 
     def _route_confidence(self, state: AgentState) -> Literal["search", "finalize"]:
@@ -130,19 +129,26 @@ class RAGAgent:
 
     def _retrieve(self, state: AgentState) -> dict:
         hits = self.kb.search(state.question, self.settings.top_k)
-        best = hits[0].coverage if hits else 0.0
-        return {"hits": hits, "trace": [f"kb: {len(hits)} chunks, best query coverage {best:.2f}"]}
+        best = max((h.coverage for h in hits), default=0.0)
+        return {
+            "hits": hits,
+            "attempt": Attempt(),
+            "found": [],
+            "used_fallback": False,
+            "answer": None,
+            "trace": [f"kb: {len(hits)} chunks, best query coverage {best:.2f}"],
+        }
 
     def _weak_retrieval(self, state: AgentState) -> dict:
         # Out-of-domain question: spend no LLM call on it.
         return {
             "attempt": Attempt(context=state.hits, flags=["weak_retrieval"]),
-            "trace": [f"kb coverage below {self.settings.min_retrieval}: skipping generation"],
+            "trace": [*state.trace, f"kb coverage below {self.settings.min_retrieval}: skipping generation"],
         }
 
     def _answer_from_kb(self, state: AgentState) -> dict:
         attempt = self._attempt(state.question, state.hits, trust=1.0)
-        return {"attempt": attempt, "trace": attempt.trace}
+        return {"attempt": attempt, "trace": [*state.trace, *attempt.trace]}
 
     def _search(self, state: AgentState) -> dict:
         assert self.search is not None
@@ -152,11 +158,11 @@ class RAGAgent:
             [*found, *(h for h in state.hits if h.coverage >= s.min_retrieval)],
             key=lambda r: (-r.coverage, -r.score),
         )[: s.top_k]
-        return {"found": merged if found else [], "trace": [f"fallback search: {len(found)} results"]}
+        return {"found": merged if found else [], "trace": [*state.trace, f"fallback search: {len(found)} results"]}
 
     def _answer_from_search(self, state: AgentState) -> dict:
         second = self._attempt(state.question, state.found, trust=self.settings.fallback_trust)
-        trace = list(second.trace)
+        trace = [*state.trace, *second.trace]
         if second.confidence.overall > state.attempt.confidence.overall:
             trace.append("fallback answer adopted")
             return {"attempt": second, "used_fallback": True, "trace": trace}
