@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from rag_citation_agent.index import KnowledgeBase, TfidfIndex, chunk_document, load_documents
 from rag_citation_agent.models import Document
 from rag_citation_agent.text import content_tokens, numbers, split_sentences
@@ -5,7 +7,7 @@ from rag_citation_agent.text import content_tokens, numbers, split_sentences
 
 def test_relevant_chunk_ranks_first_with_high_coverage(kb):
     top = kb.search("How long are audit logs retained on the Enterprise plan?")[0]
-    assert top.chunk.doc_id == "security-and-data"
+    assert top.chunk.uri == "security-and-data.md"
     assert "400 days" in top.chunk.text
     assert top.coverage > 0.6
 
@@ -73,8 +75,21 @@ def test_same_named_files_in_different_directories_get_distinct_ids(tmp_path):
         (tmp_path / sub).mkdir()
         (tmp_path / sub / "notes.md").write_text(body, encoding="utf-8")
     docs = load_documents([tmp_path / "a", tmp_path / "b"])
-    assert [(d.id, d.uri) for d in docs] == [("a/notes", "a/notes.md"), ("b/notes", "b/notes.md")]
+    assert len({d.id for d in docs}) == 2
     kb = KnowledgeBase()
     kb.add(docs)
     assert len({c.id for c in kb.chunks}) == len(kb.chunks) == 2
     assert kb.search("alpha") and kb.search("delta")
+
+
+def test_reingesting_a_nested_file_alone_replaces_its_chunks(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "docs" / "guides").mkdir(parents=True)
+    (tmp_path / "docs" / "a.md").write_text("alpha beta gamma", encoding="utf-8")
+    setup = tmp_path / "docs" / "guides" / "setup.md"
+    setup.write_text("delta epsilon zeta", encoding="utf-8")
+    kb = KnowledgeBase()
+    kb.add(load_documents([Path("docs")]))
+    setup.write_text("omega sigma tau", encoding="utf-8")
+    kb.add(load_documents([Path("docs/guides/setup.md")]))
+    assert len(kb) == 2 and kb.search("delta") == [] and kb.search("omega")

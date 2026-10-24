@@ -11,7 +11,7 @@ A RAG agent that verifies every claim against a verbatim source quote, flags low
 - **Claim-level citation verification:** each generated claim must carry a verbatim quote from a retrieved source; claims with unknown sources, fabricated quotes, unsupported terms, or numbers absent from the quote are removed before the user sees them.
 - **Confidence from verifiable signals:** `trust x verification x (retrieval + support) / 2`, ignoring the model's self-reported confidence. In the demo, one invented claim out of two drops an answer from high confidence to 0.42 and flags it.
 - **Search fallback with abstention:** weak KB coverage skips the LLM call entirely and routes to a `SearchProvider`; if nothing verifies, the agent abstains rather than guesses.
-- **Fully offline and swappable:** the LLM is behind a one-method protocol and retrieval/search are local, so all 63 tests and the 4-scenario demo run with no network or API key.
+- **Fully offline and swappable:** the LLM is behind a one-method protocol and retrieval/search are local, so all 64 tests and the 4-scenario demo run with no network or API key.
 - **Prompt-injection mitigation:** retrieved text is escaped inside `<source>` tags and declared untrusted (covered by a test).
 
 Most RAG demos stop at "stuff chunks into a prompt and cite whatever the model says." This project
@@ -155,6 +155,6 @@ uv run rag-agent ask "your question" -v       # add --offline for no key, --json
 
 ## Tests
 
-`uv run pytest` runs 63 offline tests. The LLM sits behind the one-method `LLMClient` protocol; tests use
+`uv run pytest` runs 64 offline tests. The LLM sits behind the one-method `LLMClient` protocol; tests use
 `ScriptedLLMClient` (canned replies, records prompts) and a fake chat model for `AnthropicClient`, so no network or API key
 is ever needed. The table above maps each capability to the tests that prove it.
