@@ -50,7 +50,8 @@ def test_store_roundtrips_through_json(kb, tmp_path):
     assert [r.chunk.id for r in loaded.search(q)] == [r.chunk.id for r in kb.search(q)]
 
 
-def test_load_documents_reads_titles_from_headings(tmp_path):
+def test_load_documents_reads_titles_from_headings(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # ids are relative to the working directory
     (tmp_path / "x.md").write_text("# My Title\n\nbody text", encoding="utf-8")
     (tmp_path / "ignored.png").write_bytes(b"")
     docs = load_documents([tmp_path])
