@@ -12,7 +12,7 @@ class LLMClient(Protocol):
 
 
 class AnthropicClient:
-    """Thin wrapper over the official SDK; the only module that touches the network."""
+    """Claude via langchain-anthropic's ChatAnthropic; the only module that touches the network."""
 
     def __init__(self, api_key: str | None, model: str, client: object | None = None):
         if client is None:
@@ -21,20 +21,20 @@ class AnthropicClient:
                     "ANTHROPIC_API_KEY is not set. Put it in the environment or a .env file, "
                     "or run with --offline."
                 )
-            import anthropic
+            from langchain_anthropic import ChatAnthropic
 
-            client = anthropic.Anthropic(api_key=api_key)
+            client = ChatAnthropic(model=model, api_key=api_key, max_tokens=1500)
         self._client = client
         self.model = model
 
     def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
-        response = self._client.messages.create(  # type: ignore[attr-defined]
-            model=self.model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
+        reply = self._client.invoke(  # type: ignore[attr-defined]
+            [("system", system), ("human", user)], max_tokens=max_tokens
         )
-        return "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+        content = reply.content
+        if isinstance(content, str):
+            return content
+        return "".join(b if isinstance(b, str) else b.get("text", "") for b in content)
 
 
 class ScriptedLLMClient:

@@ -2,15 +2,16 @@
 
 A RAG agent that verifies every claim against a verbatim source quote, flags low-confidence answers, and falls back to search.
 
-**Technologies:** Python 3.11+, Anthropic Claude (`claude-sonnet-5-5`), Pydantic v2, pytest, local TF-IDF retrieval
+**Technologies:** Python 3.11+, LangGraph, langchain-anthropic (Claude `claude-sonnet-5-5`), Pydantic v2, pytest, local TF-IDF retrieval
 **Category:** AI agents / RAG · **Shows:** you can prevent hallucinations at scale
 
 ## Highlights
 
+- **LangGraph agent:** the flow is a `StateGraph` with typed Pydantic state, six explicit nodes, and conditional edges for the retrieval gate, the confidence check, and the search fallback. A `MemorySaver` checkpointer records each question's path (queryable via `agent.history(thread_id)`), and a recursion limit bounds every run.
 - **Claim-level citation verification:** each generated claim must carry a verbatim quote from a retrieved source; claims with unknown sources, fabricated quotes, unsupported terms, or numbers absent from the quote are removed before the user sees them.
 - **Confidence from verifiable signals:** `trust x verification x (retrieval + support) / 2`, ignoring the model's self-reported confidence. In the demo, one invented claim out of two drops an answer from high confidence to 0.42 and flags it.
 - **Search fallback with abstention:** weak KB coverage skips the LLM call entirely and routes to a `SearchProvider`; if nothing verifies, the agent abstains rather than guesses.
-- **Fully offline and swappable:** the LLM is behind a one-method protocol and retrieval/search are local, so all 50 tests and the 4-scenario demo run with no network or API key.
+- **Fully offline and swappable:** the LLM is behind a one-method protocol and retrieval/search are local, so all 55 tests and the 4-scenario demo run with no network or API key.
 - **Prompt-injection mitigation:** retrieved text is escaped inside `<source>` tags and declared untrusted (covered by a test).
 
 Most RAG demos stop at "stuff chunks into a prompt and cite whatever the model says." This project
@@ -27,9 +28,15 @@ and the answer is scored, flagged, and (if weak) retried against search results.
 | **Prevent hallucinations** | Every claim is checked: source exists, quote is literally in the source, claim terms are covered by the source, every number appears in the quote. Failures are dropped, never shown. | `tests/test_grounding.py`, `test_fabricated_claim_is_removed_…`, `test_answer_with_only_fabricated_claims_abstains` |
 | **Flag low confidence** | Confidence is computed from verifiable signals (below) and compared to a configurable threshold. | `tests/test_confidence.py`, `test_low_confidence_is_flagged_…`, `test_threshold_is_configurable` |
 | **Fallback to search** | Weak retrieval or low confidence triggers a `SearchProvider`; the better-scoring answer wins and is labelled as search-sourced. | `test_missing_kb_topic_skips_generation_…`, `test_low_confidence_kb_answer_triggers_fallback_…`, `test_fallback_that_is_no_better_…` |
+| **Graph flow and checkpoints** | Explicit nodes/edges; per-thread checkpoint history; recursion limit. | `tests/test_graph.py` |
 | **Abstain instead of guessing** | No verified claims -> an explicit "couldn't find a supported answer", never a made-up one. | `test_unanswerable_question_abstains_even_with_search` |
 
 ## Architecture
+
+The agent is a LangGraph `StateGraph` (`agent.py`). Nodes: `retrieve`, `answer_from_kb`, `weak_retrieval`,
+`search`, `answer_from_search`, `finalize`. Conditional edges choose the path after retrieval (coverage gate),
+after scoring (confidence threshold / search provider available), and after search (any results?). Equivalent
+flow, drawn as a pipeline:
 
 ```
 question
@@ -67,7 +74,7 @@ Components (in `src/rag_citation_agent/`), each with one responsibility:
 - `generation.py` prompt (sources are escaped and declared untrusted) and strict JSON parsing.
 - `grounding.py` the claim verifier. `confidence.py` the scoring formula.
 - `search.py` `SearchProvider` protocol + local `SnapshotSearch`.
-- `agent.py` the orchestration. `llm.py` the `LLMClient` protocol, `AnthropicClient`, `ScriptedLLMClient`.
+- `agent.py` the LangGraph `StateGraph`: typed `AgentState`, nodes, conditional edges, checkpointer. `llm.py` the `LLMClient` protocol, `AnthropicClient` (wraps `ChatAnthropic`), `ScriptedLLMClient`.
 - `offline.py` a deterministic extractive client so the CLI/demo work with no key.
 
 ### Confidence
@@ -132,6 +139,11 @@ uv run rag-agent ask "your question" -v       # add --offline for no key, --json
 - **TF-IDF over embeddings.** Zero dependencies, offline, deterministic tests, and the IDF-weighted coverage score doubles as
   an interpretable "does the KB know this topic" signal. The cost is weaker semantic matching (synonyms). `KnowledgeBase`
   is the seam to swap in dense or hybrid retrieval.
+- **LangGraph where it fits.** The branching (gate, confidence check, optional fallback) is exactly what conditional edges
+  express, and the checkpointer gives a replayable per-question path. I did not add interrupts or parallel branches:
+  there is no human-in-the-loop step, and the fallback deliberately runs only after the KB attempt fails (parallel
+  search would spend a search and an LLM call on every question). `MemorySaver` is in-process, so a long-lived service
+  should swap in a persistent saver or per-request threads.
 - **Search is a protocol.** `SnapshotSearch` searches a local JSON file so everything runs offline; production would
   implement `SearchProvider` against a real search API. Search answers get a trust discount and a visible flag because web
   content is less vetted than a curated KB.
@@ -143,6 +155,6 @@ uv run rag-agent ask "your question" -v       # add --offline for no key, --json
 
 ## Tests
 
-`uv run pytest` runs 50 offline tests. The LLM sits behind the one-method `LLMClient` protocol; tests use
-`ScriptedLLMClient` (canned replies, records prompts) and a fake SDK object for `AnthropicClient`, so no network or API key
+`uv run pytest` runs 55 offline tests. The LLM sits behind the one-method `LLMClient` protocol; tests use
+`ScriptedLLMClient` (canned replies, records prompts) and a fake chat model for `AnthropicClient`, so no network or API key
 is ever needed. The table above maps each capability to the tests that prove it.

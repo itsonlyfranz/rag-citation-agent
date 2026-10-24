@@ -7,20 +7,21 @@ from rag_citation_agent.config import DEFAULT_MODEL, Settings, load_dotenv
 from rag_citation_agent.llm import AnthropicClient, ScriptedLLMClient
 
 
-class FakeMessages:
-    def __init__(self):
-        self.kwargs = None
+class FakeChatModel:
+    def __init__(self, content):
+        self.content, self.args = content, None
 
-    def create(self, **kwargs):
-        self.kwargs = kwargs
-        return SimpleNamespace(content=[SimpleNamespace(type="text", text="hel"), SimpleNamespace(type="tool_use"), SimpleNamespace(type="text", text="lo")])
+    def invoke(self, messages, **kwargs):
+        self.args = (messages, kwargs)
+        return SimpleNamespace(content=self.content)
 
 
-def test_anthropic_client_sends_model_system_and_user_and_joins_text_blocks():
-    fake = SimpleNamespace(messages=FakeMessages())
+def test_anthropic_client_sends_system_and_user_and_joins_text_blocks():
+    fake = FakeChatModel(["hel", {"type": "text", "text": "lo"}, {"type": "tool_use"}])
     client = AnthropicClient(None, "claude-test", client=fake)
     assert client.complete("sys", "usr", max_tokens=50) == "hello"
-    assert fake.messages.kwargs == {"model": "claude-test", "max_tokens": 50, "system": "sys", "messages": [{"role": "user", "content": "usr"}]}
+    assert fake.args == ([("system", "sys"), ("human", "usr")], {"max_tokens": 50})
+    assert AnthropicClient(None, "m", client=FakeChatModel("plain")).complete("s", "u") == "plain"
 
 
 def test_anthropic_client_requires_a_key_when_no_client_injected():

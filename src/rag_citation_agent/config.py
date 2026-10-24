@@ -37,6 +37,8 @@ class Settings(BaseModel):
     min_support: float = Field(0.6, ge=0, le=1)
     # Multiplier applied to answers built from search results instead of the curated KB.
     fallback_trust: float = Field(0.9, ge=0, le=1)
+    # LangGraph step budget per question; the graph has no loops, so hitting it signals a wiring bug.
+    recursion_limit: int = Field(25, ge=1)
     index_path: Path = Path(".rag/index.json")
     search_snapshot: Path = Path("data/web_snapshot/results.json")
 
