@@ -11,7 +11,7 @@ A RAG agent that verifies every claim against a verbatim source quote, flags low
 - **Claim-level citation verification:** each generated claim must carry a verbatim quote from a retrieved source; claims with unknown sources, fabricated quotes, unsupported terms, or numbers absent from the quote are removed before the user sees them.
 - **Confidence from verifiable signals:** `trust x verification x (retrieval + support) / 2`, ignoring the model's self-reported confidence. In the demo, one invented claim out of two drops an answer from high confidence to 0.42 and flags it.
 - **Search fallback with abstention:** weak KB coverage skips the LLM call entirely and routes to a `SearchProvider`; if nothing verifies, the agent abstains rather than guesses.
-- **Fully offline and swappable:** the LLM is behind a one-method protocol and retrieval/search are local, so all 64 tests and the 4-scenario demo run with no network or API key.
+- **Fully offline and swappable:** the LLM is behind a one-method protocol and retrieval/search are local, so all 68 tests and the 4-scenario demo run with no network or API key.
 - **Prompt-injection mitigation:** retrieved text is escaped inside `<source>` tags and declared untrusted (covered by a test).
 
 Most RAG demos stop at "stuff chunks into a prompt and cite whatever the model says." This project
@@ -35,8 +35,66 @@ and the answer is scored, flagged, and (if weak) retried against search results.
 
 The agent is a LangGraph `StateGraph` (`agent.py`). Nodes: `retrieve`, `answer_from_kb`, `weak_retrieval`,
 `search`, `answer_from_search`, `finalize`. Conditional edges choose the path after retrieval (coverage gate),
-after scoring (confidence threshold / search provider available), and after search (any results?). Equivalent
-flow, drawn as a pipeline:
+after scoring (confidence threshold / search provider available), and after search (any results?).
+
+### Agent flow
+
+Generated from the compiled graph (`RAGAgent(...).graph.get_graph().draw_mermaid()`); dotted arrows are conditional
+edges. Regenerate with `python scripts/render_graph.py`; `tests/test_readme_diagrams.py` fails if its nodes or edges drift.
+
+<!-- flow-diagram:start -->
+```mermaid
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	retrieve(retrieve)
+	answer_from_kb(answer_from_kb)
+	weak_retrieval(weak_retrieval)
+	search(search)
+	answer_from_search(answer_from_search)
+	finalize(finalize)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> retrieve;
+	answer_from_kb -.-> finalize;
+	answer_from_kb -.-> search;
+	answer_from_search --> finalize;
+	retrieve -.-> answer_from_kb;
+	retrieve -.-> weak_retrieval;
+	search -.-> answer_from_search;
+	search -.-> finalize;
+	weak_retrieval -.-> finalize;
+	weak_retrieval -.-> search;
+	finalize --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
+```
+<!-- flow-diagram:end -->
+
+### Component diagram
+
+```mermaid
+flowchart LR
+    CLI["cli.py<br/>ask / ingest / demo"] --> Agent
+    subgraph Agent["agent.py: RAGAgent (LangGraph StateGraph)"]
+        Graph["AgentState + nodes + conditional edges"]
+    end
+    Graph -->|"retrieve"| KB["index.py<br/>KnowledgeBase (TF-IDF)"]
+    Graph -->|"generate"| Gen["generation.py<br/>prompt + strict JSON parse"]
+    Gen --> LLM["llm.py<br/>LLMClient protocol"]
+    LLM -.-> Anthropic["AnthropicClient<br/>(ChatAnthropic)"]
+    LLM -.-> Offline["offline.py: ExtractiveLLMClient<br/>llm.py: ScriptedLLMClient<br/>no API key"]
+    Graph -->|"verify"| Ground["grounding.py<br/>claim verifier"]
+    Graph -->|"score"| Conf["confidence.py<br/>scoring formula"]
+    Graph -->|"fallback"| Search["search.py<br/>SearchProvider / SnapshotSearch"]
+    Graph --> Models["models.py<br/>Chunk, Claim, Citation, Answer"]
+```
+
+Equivalent flow, drawn as a pipeline:
 
 ```
 question
@@ -155,6 +213,6 @@ uv run rag-agent ask "your question" -v       # add --offline for no key, --json
 
 ## Tests
 
-`uv run pytest` runs 64 offline tests. The LLM sits behind the one-method `LLMClient` protocol; tests use
+`uv run pytest` runs 68 offline tests. The LLM sits behind the one-method `LLMClient` protocol; tests use
 `ScriptedLLMClient` (canned replies, records prompts) and a fake chat model for `AnthropicClient`, so no network or API key
 is ever needed. The table above maps each capability to the tests that prove it.
