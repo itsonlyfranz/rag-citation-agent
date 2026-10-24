@@ -19,8 +19,7 @@ import operator
 import uuid
 from typing import Annotated, Any, Literal
 
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
@@ -69,15 +68,12 @@ class RAGAgent:
         llm: LLMClient,
         search: SearchProvider | None = None,
         settings: Settings | None = None,
+        checkpointer: BaseCheckpointSaver | None = None,
     ):
         self.kb, self.llm, self.search = kb, llm, search
         self.settings = settings or Settings()
-        # Checkpointing: every node's state is saved per thread, so a run can be replayed/inspected.
-        # Our own models are allow-listed so checkpoints deserialize under strict msgpack settings.
-        serde = JsonPlusSerializer(
-            allowed_msgpack_modules=[("rag_citation_agent.models",), ("rag_citation_agent.agent",)]
-        )
-        self.checkpointer = MemorySaver(serde=serde)
+        # Checkpointing is opt-in: with a saver, every node's state is kept per thread for replay/inspection.
+        self.checkpointer = checkpointer
         self.graph = self._build()
 
     # --- graph wiring --------------------------------------------------------------------------
@@ -110,6 +106,8 @@ class RAGAgent:
 
     def history(self, thread_id: str) -> list[str]:
         """Nodes executed on a thread, oldest first, read back from the checkpointer."""
+        if self.checkpointer is None:
+            raise RuntimeError("history() needs a checkpointer: construct RAGAgent(..., checkpointer=MemorySaver())")
         config: Any = {"configurable": {"thread_id": thread_id}}
         snapshots = reversed(list(self.graph.get_state_history(config)))
         return [n for snap in snapshots for n in snap.next if n != "__start__"]
