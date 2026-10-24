@@ -35,8 +35,66 @@ and the answer is scored, flagged, and (if weak) retried against search results.
 
 The agent is a LangGraph `StateGraph` (`agent.py`). Nodes: `retrieve`, `answer_from_kb`, `weak_retrieval`,
 `search`, `answer_from_search`, `finalize`. Conditional edges choose the path after retrieval (coverage gate),
-after scoring (confidence threshold / search provider available), and after search (any results?). Equivalent
-flow, drawn as a pipeline:
+after scoring (confidence threshold / search provider available), and after search (any results?).
+
+### Agent flow
+
+Generated from the compiled graph (`RAGAgent(...).graph.get_graph().draw_mermaid()`); dotted arrows are conditional
+edges. Regenerate with `python scripts/render_graph.py`; `tests/test_readme_diagrams.py` fails if it drifts.
+
+<!-- flow-diagram:start -->
+```mermaid
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	retrieve(retrieve)
+	answer_from_kb(answer_from_kb)
+	weak_retrieval(weak_retrieval)
+	search(search)
+	answer_from_search(answer_from_search)
+	finalize(finalize)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> retrieve;
+	answer_from_kb -.-> finalize;
+	answer_from_kb -.-> search;
+	answer_from_search --> finalize;
+	retrieve -.-> answer_from_kb;
+	retrieve -.-> weak_retrieval;
+	search -.-> answer_from_search;
+	search -.-> finalize;
+	weak_retrieval -.-> finalize;
+	weak_retrieval -.-> search;
+	finalize --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
+```
+<!-- flow-diagram:end -->
+
+### Components
+
+```mermaid
+flowchart LR
+    CLI["cli.py<br/>ask / ingest / demo"] --> Agent
+    subgraph Agent["agent.py: RAGAgent (LangGraph StateGraph)"]
+        Graph["AgentState + nodes + conditional edges"]
+    end
+    Graph -->|"retrieve"| KB["index.py<br/>KnowledgeBase (TF-IDF)"]
+    Graph -->|"generate"| Gen["generation.py<br/>prompt + strict JSON parse"]
+    Gen --> LLM["llm.py<br/>LLMClient protocol"]
+    LLM -.-> Anthropic["AnthropicClient<br/>(ChatAnthropic)"]
+    LLM -.-> Offline["offline.py / ScriptedLLMClient<br/>no API key"]
+    Graph -->|"verify"| Ground["grounding.py<br/>claim verifier"]
+    Graph -->|"score"| Conf["confidence.py<br/>scoring formula"]
+    Graph -->|"fallback"| Search["search.py<br/>SearchProvider / SnapshotSearch"]
+    Graph --> Models["models.py<br/>Chunk, Claim, Citation, Answer"]
+```
+
+Equivalent flow, drawn as a pipeline:
 
 ```
 question
