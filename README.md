@@ -1,7 +1,17 @@
 # RAG Agent with Citation Grounding
 
-> Retrieve context, generate answers with sources, flag low-confidence responses, fall back to search.
-> **Shows: you can prevent hallucinations at scale.**
+A RAG agent that verifies every claim against a verbatim source quote, flags low-confidence answers, and falls back to search.
+
+**Technologies:** Python 3.11+, Anthropic Claude (`claude-sonnet-5-5`), Pydantic v2, pytest, local TF-IDF retrieval
+**Category:** AI agents / RAG · **Shows:** you can prevent hallucinations at scale
+
+## Highlights
+
+- **Claim-level citation verification:** each generated claim must carry a verbatim quote from a retrieved source; claims with unknown sources, fabricated quotes, unsupported terms, or numbers absent from the quote are removed before the user sees them.
+- **Confidence from verifiable signals:** `trust x verification x (retrieval + support) / 2`, ignoring the model's self-reported confidence. In the demo, one invented claim out of two drops an answer from high confidence to 0.42 and flags it.
+- **Search fallback with abstention:** weak KB coverage skips the LLM call entirely and routes to a `SearchProvider`; if nothing verifies, the agent abstains rather than guesses.
+- **Fully offline and swappable:** the LLM is behind a one-method protocol and retrieval/search are local, so all 50 tests and the 4-scenario demo run with no network or API key.
+- **Prompt-injection mitigation:** retrieved text is escaped inside `<source>` tags and declared untrusted (covered by a test).
 
 Most RAG demos stop at "stuff chunks into a prompt and cite whatever the model says." This project
 treats the model's output as **untrusted** and verifies every claim against the retrieved text before
@@ -50,7 +60,7 @@ confidence = verification x (retrieval + support) / 2              |
    Answer: text with [n] citations, removed claims, confidence, flags, trace
 ```
 
-Modules in `src/rag_citation_agent/`:
+Components (in `src/rag_citation_agent/`), each with one responsibility:
 
 - `models.py` Pydantic v2 models (`Chunk`, `Claim`, `Citation`, `Confidence`, `Answer`).
 - `index.py` chunking, TF-IDF inverted index, JSON-persisted `KnowledgeBase`.
