@@ -87,7 +87,7 @@ flowchart LR
     Graph -->|"generate"| Gen["generation.py<br/>prompt + strict JSON parse"]
     Gen --> LLM["llm.py<br/>LLMClient protocol"]
     LLM -.-> Anthropic["AnthropicClient<br/>(ChatAnthropic)"]
-    LLM -.-> Offline["offline.py / ScriptedLLMClient<br/>no API key"]
+    LLM -.-> Offline["offline.py: ExtractiveLLMClient<br/>llm.py: ScriptedLLMClient<br/>no API key"]
     Graph -->|"verify"| Ground["grounding.py<br/>claim verifier"]
     Graph -->|"score"| Conf["confidence.py<br/>scoring formula"]
     Graph -->|"fallback"| Search["search.py<br/>SearchProvider / SnapshotSearch"]
